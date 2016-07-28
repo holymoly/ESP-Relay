@@ -1,9 +1,12 @@
 #include <SimpleTimer.h>
 #include <ESP8266WiFi.h>
-#include <WiFiClient.h>
 #include <WiFiUdp.h>
 #include <ESP8266WebServer.h>
+#include <EEPROM.h>
+
 #include "SVG.h"
+#include "WiFi.h"
+#include "Config.h"
 
 //*****************************************************************************
 // Server
@@ -12,14 +15,14 @@ ESP8266WebServer server(80);
 
 //*****************************************************************************
 // Defines
-#define LED 0          // Led in NodeMCU at pin GPIO16 (D0).
+#define LED 1         // Led in NodeMCU at pin GPIO16 (D0).
 #define pinRelay1 16
-#define pinRelay2 15
-#define pinRelay3 14
-#define pinRelay4 13
+#define pinRelay2 5
+#define pinRelay3 4
+#define pinRelay4 0
 
 #define udp_port 8981
-#define description "Living Room"
+#define description "Kitchen"
 #define maxRemoteEsps 9
 
 //*****************************************************************************
@@ -35,15 +38,8 @@ struct REMOTE_ESP{
 REMOTE_ESP remote_esps[maxRemoteEsps];
 
 //*****************************************************************************
-// WiFI
-const char *ssid = "blabla";
-const char *password = "blabla";
-IPAddress ip;
-
-//*****************************************************************************
 // UDP
 WiFiUDP udp;
-IPAddress broadcastIp;
 char packetBuffer[255]; //buffer to hold incoming packet
 
 //*****************************************************************************
@@ -116,7 +112,7 @@ void buildHtml(){
   message += ip[3];
   message += "<br>";
   message += "<br>";
-   
+
   //Remote ESP-Relays
   for( int i=0; i < maxRemoteEsps; i++){
     if(strcmp("",remote_esps[i].name) != 0){
@@ -194,9 +190,32 @@ void buildHtml(){
       message += "<br>";
     }
   }
-  
+
   server.send(200, "text/html", message);
   digitalWrite(LED, 1);
+}
+
+void handleConfig(){
+  server.send(200,"text/html",buildConfig());
+}
+
+void handleSetConfig(){
+  if (server.hasArg("SSID") && server.hasArg("PASSWORD")){
+      WiFi.disconnect();
+
+      server.arg("SSID").toCharArray(ssid,  server.arg("SSID").length()+1);
+      server.arg("PASSWORD").toCharArray(password,  server.arg("PASSWORD").length()+1);
+
+      EEPROM.begin(512);
+      EEPROM.put(0, ssid);
+      EEPROM.put(100, password);
+      EEPROM.end();
+
+      Serial.print("SSID: ");
+      Serial.println(ssid);
+
+      beginWiFi();
+  }
 }
 
 void handleRoot() {
@@ -209,41 +228,41 @@ void relay1On(){
   buildHtml();
 }
 void relay1Off(){
-  digitalWrite(pinRelay1, LOW); 
+  digitalWrite(pinRelay1, LOW);
   relayState[0] = '0';
   buildHtml();
 }
 
 void relay2On(){
-  digitalWrite(pinRelay2, HIGH); 
+  digitalWrite(pinRelay2, HIGH);
   relayState[1] = '1';
   buildHtml();
 }
 void relay2Off(){
   digitalWrite(pinRelay2, LOW);
-  relayState[1] = '0'; 
+  relayState[1] = '0';
   buildHtml();
 }
 
 void relay3On(){
-  digitalWrite(pinRelay3, HIGH); 
-  relayState[2] = '1'; 
+  digitalWrite(pinRelay3, HIGH);
+  relayState[2] = '1';
   buildHtml();
 }
 void relay3Off(){
-  digitalWrite(pinRelay3, LOW); 
-  relayState[2] = '0'; 
+  digitalWrite(pinRelay3, LOW);
+  relayState[2] = '0';
   buildHtml();
 }
 
 void relay4On(){
-  digitalWrite(pinRelay4, HIGH); 
-  relayState[3] = '1'; 
+  digitalWrite(pinRelay4, HIGH);
+  relayState[3] = '1';
   buildHtml();
 }
 void relay4Off(){
-  digitalWrite(pinRelay4, LOW); 
-  relayState[3] = '0'; 
+  digitalWrite(pinRelay4, LOW);
+  relayState[3] = '0';
   buildHtml();
 }
 
@@ -269,7 +288,7 @@ void handleNotFound(){
           Serial.println( remoteState );
           Serial.print(remote_esps[i].ip);
           Serial.print(remote_esps[i].udpPort);
-          
+
           udp.beginPacket(remote_esps[i].ip, udp_port);
           udp.write("3;");
           udp.write(n + '0');
@@ -284,7 +303,7 @@ void handleNotFound(){
 void udpBroadcast(){
   digitalWrite(LED, 0);
   Serial.println ( "Hello Broadcast send" );
-  
+
   // transmit broadcast package
   udp.beginPacket(broadcastIp, udp_port);
   udp.write("1");
@@ -312,7 +331,7 @@ void checkUdpData(){
     }
     Serial.print("Contents:");
     Serial.println(packetBuffer);
-    
+
     // Reply to broadcast
     if ( packetBuffer[0] == '1' ){
       Serial.println("Sending UDP response");
@@ -326,7 +345,7 @@ void checkUdpData(){
       udp.write(current);
       // Add relay data and current
       udp.endPacket();
-    } 
+    }
 
     // Reply to broadcast
     if ( packetBuffer[0] == '3' ){
@@ -365,12 +384,12 @@ void checkUdpData(){
             relay4On();
           }
           break;
-        default: 
+        default:
           // if nothing else matches, do the default
           // default is optional
         break;
       }
-    } 
+    }
 
     // Receiving broadcast respons
     if ( packetBuffer[0] == '2' ){
@@ -378,19 +397,19 @@ void checkUdpData(){
       // parse data and add/update remote_esps
       int field = 0;
       int offset = 2; // 2 becauss packet starts with "2,"
-             
+
       char nameBuffer[255];
       char relayBuffer[5];
       char currentBuffer[5];
-      
+
       for( int i=2; i < packetSize; i++){
         Serial.print(packetBuffer[i]);
-        
+
         if( packetBuffer[i] == ';' ){
           offset = i + 1;
           field = field + 1;
         }
-        
+
         switch ( field ) {
           case 0:
             nameBuffer[i-offset] = packetBuffer[i];
@@ -404,18 +423,18 @@ void checkUdpData(){
             currentBuffer[i-offset] = packetBuffer[i];
             currentBuffer[i-offset+1] = '\0';
             break;
-          default: 
+          default:
             // if nothing else matches, do the default
             // default is optional
           break;
         }
       }
-      
+
       Serial.println("");
       Serial.println(nameBuffer);
       Serial.println(relayBuffer);
       Serial.println(currentBuffer);
-      
+
       int updateEntry = -1;
       for( int i=0; i < maxRemoteEsps; i++){
         // if name exists in array
@@ -427,22 +446,22 @@ void checkUdpData(){
           updateEntry = i;
         }
       }
-      
+
       Serial.print("Update entry: ");
       Serial.println(updateEntry);
-      
+
       strcpy(remote_esps[updateEntry].name, nameBuffer);
       remote_esps[updateEntry].ip = udp.remoteIP();
       remote_esps[updateEntry].udpPort = udp.remotePort();
       strcpy(remote_esps[updateEntry].relayState, relayBuffer);
       remote_esps[updateEntry].current = atoi(currentBuffer);
-      
+
       // Print updated data
       Serial.println(remote_esps[updateEntry].name);
       Serial.println(remote_esps[updateEntry].ip);
       Serial.println(remote_esps[updateEntry].udpPort);
       Serial.println(remote_esps[updateEntry].current);
-    } 
+    }
   }
   digitalWrite(LED, 1);
 }
@@ -461,28 +480,20 @@ void setup ( void ) {
   // Start serial
 	Serial.begin ( 115200 );
 
-  // Start and connect to WiFI
-	WiFi.begin ( ssid, password );
+  beginWiFi(); // see WiFi.h
 	Serial.println ( "" );
-
-	// Wait for connection
-	while ( WiFi.status() != WL_CONNECTED ) {
-		delay ( 200 );
-		Serial.print ( "." );
-	}
 
 	Serial.println ( "" );
 	Serial.print ( "Connected to " );
 	Serial.println ( ssid );
 	Serial.print ( "IP address: " );
-	Serial.println ( WiFi.localIP() );
-  ip = WiFi.localIP();
+	Serial.println ( ip); // see WiFi.h
 
   // Start UDP Server
   udp.begin(udp_port);
-  broadcastIp = WiFi.localIP();
+  broadcastIp = ip;
   broadcastIp[3] = 255;
-  
+
   Serial.println ( "" );
   Serial.print ( "UDP Server started on Port: " );
   Serial.println ( udp_port );
@@ -499,14 +510,17 @@ void setup ( void ) {
   server.on("/3Off", relay3Off);
   server.on("/4ON", relay4On);
   server.on("/4Off", relay4Off);
-  
+
+  server.on("/config", handleConfig);
+  server.on("/setConfig", handleSetConfig);
+
   server.onNotFound(handleNotFound);
   server.begin();
-  
+
   digitalWrite ( LED, LOW );
   delay(500);
   digitalWrite ( LED, HIGH );
-  
+
   udpBroadcasTimer.setInterval(5000,udpBroadcast);
 }
 
