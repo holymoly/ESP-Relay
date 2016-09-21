@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>ESP Relay</title>
+  <link rel="stylesheet" href="bootstrap.min.css">
+  <script type='text/javascript' src='knockout-3.4.0.js'></script>
+  <script src="jquery-1.12.4.min.js"></script>
+  <script src="bootstrap.min.js"></script>
+</head>
+
+<body>
+  <div id='canvas' class="">
+  </div>
+  <script>
+  var ws = new WebSocket('ws://' + location.hostname + ':81/', ['arduino']);
+  var relays;
+
+  var svg = "<svg class='relay' width='100%' height='100%' viewBox='0 0 1914 1914' version='1.1' xmlns='http://www.w3.org/2000/svg' xmlns:xlink='http://www.w3.org/1999/xlink' xml:space='preserve' style='fill-rule:evenodd;clip-rule:evenodd;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:1.41421;'><circle cx='956.693' cy='956.693' r='944.882' style='fill:#686868;stroke-width:16.67px;stroke:#231f20;' /><path d='M1436.9,137.131l-807.823,898.894l315.8,-16.535l-492.882,734.447l788.157,-876.464l-295.275,8.063l492.023,-748.405Z' style='fill:#ffc900;stroke-width:1px;stroke:#231f20;' /></svg>"
+  // When the connection is open, send some data to the server
+  ws.onopen = function() {
+      ws.send('Ping'); // Send the message 'Ping' to the server
+    };
+
+  // Log errors
+  ws.onerror = function(error) {
+    console.log('WebSocket Error ' + error);
+  };
+
+  // Log messages from the server
+  ws.onmessage = function(e) {
+    var tempData = JSON.parse(e.data);
+    console.log('Data: ' + tempData);
+    //check message type
+    if(tempData.msg === 'initial'){
+      relays = tempData.Relays;
+      console.log(JSON.stringify(relays));
+      draw(relays);
+    }
+  };
+
+  //draw icons and assign click funtion
+  function draw(data){
+    data.forEach(function(item, index){
+      var tempSvg = document.createElement("div");
+      tempSvg.innerHTML = svg;
+      tempSvg.classList.add('col-sm-2');
+      //console.log(tempSvg.childNodes[0]);
+      tempSvg.childNodes[0].setAttribute("data-number", index);
+      console.log("Relay " + index + " is " + item.State);
+
+      if (item.State===0) {
+        tempSvg.childNodes[0].classList.add('off');
+      };
+      if (item.State===1) {
+        tempSvg.childNodes[0].classList.add('on');
+        tempSvg.childNodes[0].childNodes[0].style.fill = "#07900c";
+      };
+      document.getElementById("canvas").appendChild(tempSvg);
+      return;
+    });
+
+    //assign fuction to button
+    $(".relay").click(function(e) {
+      console.log("Check state");
+        // If was on
+        if ($(this).hasClass("on")) {
+          console.log("Switch to off");
+          $(this).removeClass("on");
+          $(this).addClass("off");
+          $("> circle", this).css({ fill: "#686868" });
+          // send messagetype 0 for changing state, Relay Number, state=off
+          ws.send('0;' + $(this).data('number') + ';0');
+          return 0;
+        };
+        // If was off
+        if ($(this).hasClass("off")) {
+          console.log("Switch to on");
+          $(this).removeClass("off");
+          $(this).addClass("on");
+          $("> circle", this).css({ fill: "#07900c"  });
+          // send messagetype 0 for changing state, Relay Number, state=on
+          ws.send('0;' + $(this).data('number') + ';1');
+          return 0;
+        }
+        return 1;
+      })
+  }
+  </script>
+</body>
+</html>
